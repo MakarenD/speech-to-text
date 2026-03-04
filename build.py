@@ -10,6 +10,7 @@ try:
 except ImportError:
     import importlib_metadata as metadata # fallback for older python
 
+def build():
     print(f"Starting build for {platform.system()}...")
     
     # 1. Setup paths
