@@ -43,7 +43,7 @@ Or manually:
 1. **Install Dependencies**: Python 3.9+ is required.
    ```bash
    python3 -m venv venv
-   source venv/bin/activate
+   source venv39/bin/activate
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
@@ -138,7 +138,7 @@ chmod +x setup.sh
 1. **Установка зависимостей**:
    ```bash
    python3 -m venv venv
-   source venv/bin/activate
+   source venv39/bin/activate
    pip install --upgrade pip
    pip install -r requirements.txt
    ```

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.gemini.speech-to-text</string>
+    <key>CFBundleName</key>
+    <string>Speech-to-Text</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app needs access to your microphone for speech recognition.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>This app needs access to system audio for loopback recording.</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSUIElement</key>
+    <false/>
+</dict>
+</plist>

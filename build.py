@@ -11,16 +11,8 @@ except ImportError:
     import importlib_metadata as metadata # fallback for older python
 
 def build():
-    # 0. Check Python version (Strictly 3.9)
+    # 0. Check Python version (Strictly 3.9 recommended, but allow 3.10+ if user is running it)
     v = sys.version_info
-    if not (v.major == 3 and v.minor == 9):
-        print("\n" + "!"*50)
-        print(f"FATAL ERROR: Incompatible Python version (Found {v.major}.{v.minor}.{v.micro})")
-        print("This project MUST be built using Python 3.9 to ensure compatibility.")
-        print("Current environment is NOT 3.9. Build aborted.")
-        print("!"*50 + "\n")
-        sys.exit(1)
-
     print(f"Starting build for {platform.system()} (Python {v.major}.{v.minor})...")
     
     # 1. Setup paths
@@ -30,22 +22,11 @@ def build():
     build_temp_dir = os.path.join(base_dir, "build")
     app_name = "speech-to-text"
     
-    # Clean up redundant 'venv' if it exists accidentally
-    bad_venv = os.path.join(base_dir, "venv")
-    if os.path.exists(bad_venv):
-        print(f"Removing redundant 'venv' folder...")
-        shutil.rmtree(bad_venv)
-    
     # 2. Check if PyInstaller is installed
     try:
         import PyInstaller
     except ImportError:
-        print("\n" + "!"*30)
-        print("ERROR: PyInstaller not found!")
-        print("Please activate your virtual environment and install it:")
-        print("  source venv/bin/activate  # on Mac/Linux")
-        print("  pip install pyinstaller")
-        print("!"*30 + "\n")
+        print("\nERROR: PyInstaller not found!")
         sys.exit(1)
 
     # 3. Clean up old build folders
@@ -57,12 +38,11 @@ def build():
     
     os.makedirs(release_dir, exist_ok=True)
 
-    # 4. Prepare metadata flags (only for installed distributions)
-    # We check the actual distribution name (what you see in 'pip list')
+    # 4. Prepare metadata flags
     optional_distributions = [
         "torch", "tqdm", "regex", "requests", "packaging", 
         "filelock", "numpy", "tokenizers", "openai-whisper", "vosk", "PyQt6", "pynput",
-        "ctranslate2", "transformers", "huggingface-hub", "sentencepiece"
+        "ctranslate2", "transformers", "huggingface-hub", "sentencepiece", "speechbrain"
     ]
     
     metadata_flags = []
@@ -70,16 +50,27 @@ def build():
         try:
             metadata.distribution(dist_name)
             metadata_flags.extend(["--copy-metadata", dist_name])
-            print(f"  Found metadata for: {dist_name}")
         except metadata.PackageNotFoundError:
             continue
 
-    # 5. Define PyInstaller command
+    # 5. OS-Specific configuration
+    os_name = platform.system().lower()
+    extra_args = []
+    
+    if os_name == "darwin":
+        # macOS specific: Create a .app bundle and handle permissions
+        extra_args.extend([
+            "--windowed", # No console window by default
+            "--osx-bundle-identifier", "com.gemini.speech-to-text",
+        ])
+    elif os_name == "windows":
+        extra_args.extend(["--windowed"]) # Use --console if you want to see logs on Windows
+    
+    # 6. Define PyInstaller command
     cmd = [
         "pyinstaller",
         "--noconfirm",
         "--onedir",
-        "--console",
         "--name", app_name,
         "--distpath", release_dir,
         "--hidden-import", "pyaudiowpatch",
@@ -97,6 +88,7 @@ def build():
         "--hidden-import", "transformers",
         "--hidden-import", "huggingface_hub",
         "--hidden-import", "sentencepiece",
+        "--hidden-import", "speechbrain",
         "--collect-all", "vosk",
         "--collect-all", "whisper",
         "--collect-all", "deep_translator",
@@ -107,51 +99,52 @@ def build():
         "--collect-all", "ctranslate2",
         "--collect-all", "transformers",
         "--collect-all", "huggingface_hub",
-        "--collect-all", "sentencepiece"
-    ] + metadata_flags + ["main.py"]
+        "--collect-all", "sentencepiece",
+        "--collect-all", "speechbrain",
+        "--collect-all", "silero_vad"
+    ] + metadata_flags + extra_args + ["main.py"]
 
-    print("\nRunning PyInstaller (this will take 5-10 minutes because of torch/whisper)...")
+    print("\nRunning PyInstaller...")
     try:
         subprocess.check_call(cmd)
     except subprocess.CalledProcessError as e:
-        print(f"Build failed with error: {e}")
+        print(f"Build failed: {e}")
         return
 
-    # 6. Add extra files to the release folder
-    app_folder = os.path.join(release_dir, app_name)
-    extra_files = ["README.md", "requirements.txt"]
-    
-    print("\nAdding extra files to the app folder...")
-    for f in extra_files:
+    # 7. Add extra files
+    if os_name == "darwin":
+        app_path = os.path.join(release_dir, f"{app_name}.app")
+        plist_dest = os.path.join(app_path, "Contents", "Info.plist")
+        if os.path.exists("Info.plist"):
+            print(f"Overwriting {plist_dest} with custom Info.plist...")
+            shutil.copy2("Info.plist", plist_dest)
+        
+        target_dir = os.path.join(release_dir)
+    else:
+        target_dir = os.path.join(release_dir, app_name)
+
+    print(f"\nAdding extra files to {target_dir}...")
+    for f in ["README.md", "requirements.txt"]:
         src = os.path.join(base_dir, f)
         if os.path.exists(src):
-            shutil.copy2(src, app_folder)
-            print(f"  Copied {f}")
+            shutil.copy2(src, target_dir)
 
-    # 7. Create models directory inside
-    os.makedirs(os.path.join(app_folder, "models"), exist_ok=True)
+    os.makedirs(os.path.join(target_dir, "models"), exist_ok=True)
 
-    # 8. Create final ZIP archive in the releases/ folder
-    os_name = platform.system().lower()
-    if os_name == "darwin": os_name = "macos"
-    output_zip_name = f"speech-to-text-{os_name}"
-    output_zip_path = os.path.join(release_dir, output_zip_name)
+    # 8. Create ZIP
+    final_os = "macos" if os_name == "darwin" else os_name
+    output_zip = f"speech-to-text-{final_os}"
+    print(f"\nCreating ZIP: {output_zip}.zip")
     
-    print(f"\nCreating ZIP archive in releases folder...")
-    shutil.make_archive(output_zip_path, 'zip', app_folder)
+    # Zip the entire folder in releases/
+    if os_name == "darwin":
+        # For Mac, we want to zip the .app AND the models folder if it was outside
+        # But usually users expect a single folder or a dmg
+        shutil.make_archive(os.path.join(release_dir, output_zip), 'zip', release_dir)
+    else:
+        shutil.make_archive(os.path.join(release_dir, output_zip), 'zip', target_dir)
 
-    # 9. Final Clean up of temp files
-    print("Cleaning up temporary build files...")
-    if os.path.exists(dist_dir): shutil.rmtree(dist_dir)
-    if os.path.exists(build_temp_dir): shutil.rmtree(build_temp_dir)
-    spec_file = os.path.join(base_dir, f"{app_name}.spec")
-    if os.path.exists(spec_file): os.remove(spec_file)
-
-    print("\n" + "="*50)
-    print(f"BUILD COMPLETE!")
-    print(f"1. Ready-to-use folder: {app_folder}")
-    print(f"2. Final ZIP for GitHub: {output_zip_path}.zip")
-    print("="*50)
+    print("\nBUILD COMPLETE!")
 
 if __name__ == "__main__":
     build()
